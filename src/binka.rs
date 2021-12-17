@@ -104,6 +104,7 @@ impl BinkA2 {
 
                 // let alloc_size = 0;
 
+                // ??? number of frames in seek table (C) Kostya's Boring Codec World
                 let prepend_array_size = if data[4] == 2 {
                     u16::from_le_bytes(data[20..22].try_into().unwrap()) as u32
                 } else {
@@ -115,7 +116,7 @@ impl BinkA2 {
                     add     r13d, 10h
                 */
                 // God knows what it means
-                let unk_c = 16 + u32::from_le_bytes(data[12..16].try_into().unwrap()); // idk if it's fast or not :/
+                let unk_c = 16 + u16::from_le_bytes(data[12..14].try_into().unwrap()) as u32; // idk if it's fast or not :/
 
                 // This is BinkA1 stuff?
                 let frame_len = if samplerate < 44100 {
