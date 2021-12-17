@@ -37,7 +37,7 @@ pub struct CBinkA2 {
     // _pad: *const c_void,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BinkA2Metadata {
     pub channels: u16,
     pub samplerate: u32,
@@ -144,7 +144,11 @@ impl BinkA2 {
                             // TODO: are names even correct?
                             let chan_id = i * 2;
                             int_calc(
-                                2 - if channels.wrapping_sub(chan_id) != 0 { 1 } else { 0 },
+                                2 - if channels.wrapping_sub(chan_id) != 0 {
+                                    1
+                                } else {
+                                    0
+                                },
                             )
                         })
                         .reduce(|accum: u32, i| accum.wrapping_add(i))
@@ -187,17 +191,34 @@ mod tests {
         use super::super::BinkA2;
         use super::super::CBinkA2;
 
+        // TODO: more test vectors?
+        const DATA: [u8; 24] = [
+            0x31, 0x46, 0x43, 0x42, 0x02, 0x01, 0x80, 0xBB, 0x30, 0xDE, 0x03, 0x00, 0xF0, 0x02,
+            0x00, 0x00, 0x7E, 0xF1, 0x00, 0x00, 0x85, 0x00, 0x01, 0x00,
+        ];
+
         #[test]
         fn binka2_metadata() {
-            const DATA: [u8; 24] = [
-                0x31, 0x46, 0x43, 0x42, 0x02, 0x01, 0x80, 0xBB, 0x30, 0xDE, 0x03, 0x00, 0xF0, 0x02,
-                0x00, 0x00, 0x7E, 0xF1, 0x00, 0x00, 0x85, 0x00, 0x01, 0x00,
-            ];
             if let Some(binka) = crate::util::lla("binkawin64.dll") {
                 let decoder =
                     BinkA2::new(unsafe { binka.cast::<u8>().add(0x19000).cast::<CBinkA2>() });
                 if let Some(metadata) = decoder.parse_metadata_c(&DATA) {
                     println!("{:#?}", metadata)
+                } else {
+                    unreachable!("Failed to load parse metadata!")
+                }
+            } else {
+                unreachable!("Failed to load binkawin64.dll!")
+            }
+        }
+
+        #[test]
+        fn binka2_decomp_metadata() {
+            if let Some(binka) = crate::util::lla("binkawin64.dll") {
+                let decoder =
+                    BinkA2::new(unsafe { binka.cast::<u8>().add(0x19000).cast::<CBinkA2>() });
+                if let Some(metadata) = decoder.parse_metadata_c(&DATA) {
+                    assert_eq!(metadata, decoder.parse_metadata(&DATA).unwrap());
                 } else {
                     unreachable!("Failed to load parse metadata!")
                 }
