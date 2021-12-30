@@ -31,3 +31,15 @@ pub fn gpa(h: *const c_void, proc: &str) -> Option<*const c_void> {
         }
     }
 }
+
+pub fn get_decoder(h: *const c_void) -> Option<*const c_void> {
+    if let Some(register) = gpa(h, "MilesDriverRegisterBinkAudio") {
+        unsafe {
+            let off_ptr = register.cast::<u8>().add(3);
+            let off = *off_ptr.cast::<u32>();
+            Some(off_ptr.add(4).add(off as usize).cast())
+        }
+    } else {
+        None
+    }
+}

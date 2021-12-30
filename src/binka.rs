@@ -1,10 +1,10 @@
 use std::ffi::c_void;
 
-type FnCbRead = extern "fastcall" fn(
+pub type FnCbRead = extern "fastcall" fn(
     out: *mut c_void,
     size: usize,
     class: *mut c_void, // sizeof = 0x120 = 288
-);
+) -> usize;
 
 type FnParseMetadata = extern "fastcall" fn(
     data: *const c_void,
@@ -19,7 +19,15 @@ type FnOpenStream = extern "fastcall" fn(
     _aqw4: *mut u64, // unused in BinkA2?
     callback: FnCbRead,
     class: *mut u64, // sizeof = 0x120 = 288
-);
+) -> i64;
+type FnDecoder = extern "fastcall" fn(data: *mut c_void, out: *mut c_void, size: usize) -> usize;
+type FnUnk18 = extern "fastcall" fn(data: *mut c_void) -> u8;
+type FnUnk20 = extern "fastcall" fn(
+    data: *mut c_void, // might be const
+    a2: u32,
+    a3: *mut u32,
+    a4: *mut u32,
+) -> u32;
 
 #[repr(C)]
 pub struct CBinkA2 {
@@ -28,11 +36,11 @@ pub struct CBinkA2 {
 
     pub parse_metadata: FnParseMetadata,
     pub open_stream: FnOpenStream,
-    _unk10: *const c_void,
-    _unk18: *const c_void,
-    _unk20: *const c_void,
+    pub unk18: FnUnk18, // reset???
+    pub unk20: FnUnk20,
     _unk28: *const c_void,
     _unk30: *const c_void,
+    _unk38: *const c_void,
     // padding too???
     // _pad: *const c_void,
 }
@@ -66,11 +74,11 @@ impl BinkA2 {
         let mut adw4 = [0u32; 4];
         unsafe {
             if ((*self.binka).parse_metadata)(
-                data.as_ptr() as *const c_void,
+                data.as_ptr() as *const _,
                 data.len(),
-                (&mut channels) as *mut u16,
-                (&mut samplerate) as *mut u32,
-                (&mut samples_count) as *mut u32,
+                (&mut channels) as *mut _,
+                (&mut samplerate) as *mut _,
+                (&mut samples_count) as *mut _,
                 adw4.as_mut_ptr(),
             ) == 0
             {
@@ -87,6 +95,35 @@ impl BinkA2 {
                 })
             }
         }
+    }
+
+    pub fn open_stream_c(&self, data: &mut [u8], cb: FnCbRead, class: *mut c_void) -> i64 {
+        unsafe {
+            ((*self.binka).open_stream)(
+                data.as_mut_ptr() as *mut _,
+                std::ptr::null_mut(), // unused
+                cb,
+                class as *mut u64,
+            )
+        }
+    }
+
+    pub fn unk20_c(&self, data: &mut [u8], a2: u32) -> (u32, u32, u32) {
+        unsafe {
+            let mut a3 = 0u32;
+            let mut a4 = 0u32;
+            let ret = ((*self.binka).unk20)(
+                data.as_mut_ptr() as *mut _,
+                a2,
+                (&mut a3) as *mut _,
+                (&mut a4) as *mut _,
+            );
+            (ret, a3, a4)
+        }
+    }
+
+    pub fn unk18_c(&self, data: &mut [u8]) -> u8 {
+        unsafe { ((*self.binka).unk18)(data.as_mut_ptr() as *mut _) }
     }
 
     // TODO: refactor to Result<_>
@@ -202,7 +239,7 @@ mod tests {
         fn binka2_metadata() {
             if let Some(binka) = crate::util::lla("binkawin64.dll") {
                 let decoder =
-                    BinkA2::new(unsafe { binka.cast::<u8>().add(0x19000).cast::<CBinkA2>() });
+                    BinkA2::new(crate::util::get_decoder(binka).unwrap().cast::<CBinkA2>());
                 if let Some(metadata) = decoder.parse_metadata_c(&DATA) {
                     println!("{:#?}", metadata)
                 } else {
@@ -217,7 +254,7 @@ mod tests {
         fn binka2_decomp_metadata() {
             if let Some(binka) = crate::util::lla("binkawin64.dll") {
                 let decoder =
-                    BinkA2::new(unsafe { binka.cast::<u8>().add(0x19000).cast::<CBinkA2>() });
+                    BinkA2::new(crate::util::get_decoder(binka).unwrap().cast::<CBinkA2>());
                 if let Some(metadata) = decoder.parse_metadata_c(&DATA) {
                     assert_eq!(metadata, decoder.parse_metadata(&DATA).unwrap());
                 } else {
