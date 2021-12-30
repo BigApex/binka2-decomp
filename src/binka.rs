@@ -6,6 +6,9 @@ pub type FnCbRead = extern "fastcall" fn(
     class: *mut c_void, // sizeof = 0x120 = 288
 ) -> usize;
 
+pub type FnCbReadOld =
+    extern "fastcall" fn(class: *mut c_void, out: *mut c_void, size: usize) -> usize;
+
 type FnParseMetadata = extern "fastcall" fn(
     data: *const c_void,
     size: usize,
@@ -20,7 +23,6 @@ type FnOpenStream = extern "fastcall" fn(
     callback: FnCbRead,
     class: *mut u64, // sizeof = 0x120 = 288
 ) -> i64;
-type FnDecoder = extern "fastcall" fn(data: *mut c_void, out: *mut c_void, size: usize) -> usize;
 type FnUnk18 = extern "fastcall" fn(data: *mut c_void) -> u8;
 type FnUnk20 = extern "fastcall" fn(
     data: *mut c_void, // might be const
@@ -41,6 +43,61 @@ pub struct CBinkA2 {
     _unk28: *const c_void,
     _unk30: *const c_void,
     _unk38: *const c_void,
+    // padding too???
+    // _pad: *const c_void,
+}
+
+type FnOpenStreamOld = extern "fastcall" fn(
+    class: *mut u64,
+    data: *mut c_void,
+    _aqw4: *mut u64, // unused in BinkA2?
+    callback: FnCbReadOld,
+) -> i64;
+type FnDecoderOld = extern "fastcall" fn(
+    class: *mut c_void,
+    data: *mut c_void,
+    decoded: *mut u32,
+    size: usize,
+    cb: FnCbReadOld,
+) -> usize;
+
+// TF2's binkawin64's decoder
+#[repr(C)]
+pub struct CBinkA2_old {
+    pub idk: u32,
+    pub idk2: u32,
+
+    pub parse_metadata: FnParseMetadata,
+    pub open_stream: FnOpenStreamOld,
+    pub decode: FnDecoderOld,
+    pub unk18: FnUnk18,
+    pub unk20: FnUnk20,
+    _unk30: *const c_void,
+    // padding too???
+    // _pad: *const c_void,
+}
+
+type FnDecoderApex2019 = extern "fastcall" fn(
+    data: *mut c_void,
+    decoded: *mut u32,
+    size: usize,
+    size2: usize,
+    cb: FnCbRead,
+    class: *mut c_void,
+) -> usize;
+
+// 2019 Apex's binkawin64's decoder
+#[repr(C)]
+pub struct CBinkA2_2019 {
+    pub idk: u32,
+    pub idk2: u32,
+
+    pub parse_metadata: FnParseMetadata,
+    pub open_stream: FnOpenStream,
+    pub decode: FnDecoderApex2019,
+    pub unk18: FnUnk18,
+    pub unk20: FnUnk20,
+    _unk30: *const c_void,
     // padding too???
     // _pad: *const c_void,
 }
@@ -194,7 +251,7 @@ impl BinkA2 {
                 } else {
                     0
                 };
-                println!("{} {}|{}", alloc_size_samples, channels, half_channel);
+                // println!("{} {}|{}", alloc_size_samples, channels, half_channel);
                 // fancy round to 64?
                 let alloc_size_samples_round = (alloc_size_samples + 128 + 63) & 0xFFFFFFC0;
                 let alloc_size =
