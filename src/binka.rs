@@ -30,7 +30,7 @@ type FnGetSampleBytePos = extern "fastcall" fn(
     a3: *mut u32,
     a4: *mut u32,
 ) -> u32;
-type FnUnk28 = extern "fastcall" fn(
+type FnGetSeekPosData = extern "fastcall" fn(
     header: *const c_void,
     header_size: usize,
     a3: u32,
@@ -46,7 +46,7 @@ type FnDecode = extern "fastcall" fn(
     consumed: *mut u32,
     out2: *mut u32, // if(out2) -> assert(consumed <= reported (aka prev_out2))
 ) -> usize; // might be void
-type FnUnk38 = extern "fastcall" fn(
+type FnGetBlockSize = extern "fastcall" fn(
     allocd: *mut c_void,
     stream_data: *const c_void,
     stream_data_size: usize, // u32 in reality, idk
@@ -64,9 +64,9 @@ pub struct CBinkA2 {
     pub open_stream: FnOpenStream,
     pub reset_byte_pos: FnResetBytePos, // reset???
     pub get_sample_byte_pos: FnGetSampleBytePos,
-    pub unk28: FnUnk28,
+    pub get_seek_pos_data: FnGetSeekPosData,
     pub decode: FnDecode,
-    pub unk38: FnUnk38,
+    pub get_block_size: FnGetBlockSize,
     // padding too???
     // _pad: *const c_void,
 }
@@ -139,10 +139,16 @@ pub struct BinkA2Metadata {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Unk38Ret {
-    pub out1: u32,
+pub struct BinkA2Block {
+    pub consumed: u32,
     pub reported_block_size: u32,
-    pub out3: u32,
+    pub required_for_next_call: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BinkA2Decode {
+    pub consumed: u32,
+    pub samples: u32,
 }
 
 #[derive(Debug)]
@@ -214,10 +220,10 @@ impl BinkA2 {
         unsafe { ((*self.binka).reset_byte_pos)(data.as_mut_ptr() as *mut _) }
     }
 
-    pub fn unk28_c(&self, header: &[u8], a3: u32) -> (u64, u32, u32) {
+    pub fn get_seek_pos_data_c(&self, header: &[u8], a3: u32) -> (u64, u32, u32) {
         unsafe {
             let mut out = [0u32; 2];
-            let ret = ((*self.binka).unk28)(
+            let ret = ((*self.binka).get_seek_pos_data)(
                 header.as_ptr() as *const _,
                 header.len(),
                 a3,
@@ -233,7 +239,7 @@ impl BinkA2 {
         allocd: &mut [u8],
         streaming_data: &[u8],
         out_data: &mut [u16],
-    ) -> (u32, u32) {
+    ) -> BinkA2Decode {
         unsafe {
             let mut out = [0u32; 2];
             ((*self.binka).decode)(
@@ -243,16 +249,19 @@ impl BinkA2 {
                 out_data.as_mut_ptr() as *mut _,
                 out_data.len() as u32,
                 &mut out[0] as *mut _,
-                &mut out[1] as *mut _, // consumed block size...
+                &mut out[1] as *mut _,
             );
-            (out[0], out[1])
+            BinkA2Decode {
+                consumed: out[0],
+                samples: out[1],
+            }
         }
     }
 
-    pub fn unk38_c(&self, allocd: &mut [u8], streaming_data: &[u8]) -> Unk38Ret {
+    pub fn get_block_size_c(&self, allocd: &mut [u8], streaming_data: &[u8]) -> BinkA2Block {
         unsafe {
             let mut out = [0u32; 3];
-            ((*self.binka).unk38)(
+            ((*self.binka).get_block_size)(
                 allocd.as_mut_ptr() as *mut _,
                 streaming_data.as_ptr() as *const _,
                 streaming_data.len(),
@@ -260,10 +269,10 @@ impl BinkA2 {
                 &mut out[1] as *mut _, // reported block size...
                 &mut out[2] as *mut _,
             );
-            Unk38Ret {
-                out1: out[0],
+            BinkA2Block {
+                consumed: out[0],
                 reported_block_size: out[1],
-                out3: out[2],
+                required_for_next_call: out[2],
             }
         }
     }
@@ -271,9 +280,7 @@ impl BinkA2 {
     // TODO: refactor to Result<_>
     // TODO: finish
     pub fn parse_metadata(&self, data: &[u8]) -> Option<BinkA2Metadata> {
-        if data.len() < 24 {
-            None
-        } else if &data[0..4] != "1FCB".as_bytes() || data[4] > 2 {
+        if data.len() < 24 || (&data[0..4] != "1FCB".as_bytes() || data[4] > 2) {
             None
         } else {
             let channels = data[5] as u16;

@@ -49,7 +49,11 @@ fn main() {
     if std::env::args().nth(1).is_none() {
         println!("Invalid usage! mstr [a/2/o]");
     }
-    match std::env::args().nth(2).unwrap_or("a".to_owned()).as_str() {
+    match std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "a".to_owned())
+        .as_str()
+    {
         "o" => main_old(),
         "2" => main_2019(),
         _ => main_new(), // Ironically - only this really works
@@ -253,6 +257,7 @@ fn main_old() {
                 println!("[OLD] {} - {}", alloc_2, alloc_2 / 4);
                 let mut alloc_2 = vec![0f32; alloc_2 / 4];
 
+                #[allow(clippy::never_loop)]
                 loop {
                     let ret = ((*binka).decode)(
                         (&mut cursor) as *mut _ as *mut _,
@@ -285,6 +290,7 @@ fn main_new() {
         //     0x00, 0x00, 0x7E, 0xF1, 0x00, 0x00, 0x85, 0x00, 0x01, 0x00,
         // ];
         let file = File::open(std::env::args().nth(1).unwrap()).unwrap();
+        // TODO: unhardcode...
         const START: u64 = 0x20;
         const HEADER_SIZE: usize = 0x830; // must be gotten from MBNK...
         let mut cursor = BufReader::new(file);
@@ -316,7 +322,7 @@ fn main_new() {
             // func before decoder (we actually skipped this one?)
             // get metadata
             // open stream
-            // get sample 0th byte position (formal seek MSS does)
+            // get sample 0th byte position (required seek MSS does to skip true header in header-ish data)
             // reset byte/seek pos (wtf is this order)
             // -- LOOP STARTS --
             // func after the decoder to get required bytes and block sizes?
@@ -324,7 +330,10 @@ fn main_new() {
 
             // func before decoder...
             // wtf? return is identical to get_sample_byte_pos...
-            println!("unk28 - {:?}", decoder.unk28_c(&data, 0));
+            println!(
+                "get_seek_pos_data - {:?}",
+                decoder.get_seek_pos_data_c(&data, 0)
+            );
 
             let mut allocd = vec![0u8; metadata.alloc_size as usize];
             cursor.seek(SeekFrom::Start(START)).unwrap();
@@ -351,17 +360,14 @@ fn main_new() {
             let streaming_data_brih =
                 [&data[seek_shit.0 as usize..], &streaming_data_real[..]].concat();
 
-            let alloc_2 = (metadata.channels as usize) << 8;
-            println!("{} - {}", alloc_2, alloc_2 / 4);
-            // let mut alloc_2 = vec![0u32; alloc_2 / 4];
             let mut alloc_2 = vec![0u16; 8192 * metadata.channels as usize];
             let mut streaming_data = &streaming_data_brih[..]; //&data[seek_shit.0 as usize..]; // &mut streaming_data_real[..];
             let mut bruh = Vec::<u8>::with_capacity(metadata.samples_count as usize * 2);
             loop {
                 // wtf, the function which did streaming by itself died _(
-                let unk38 = decoder.unk38_c(&mut allocd, &streaming_data);
+                let unk38 = decoder.get_block_size_c(&mut allocd, streaming_data);
                 // let streaming_data = &mut streaming_data[unk38.out1 as usize..];
-                if unk38.out1 == 65535 {
+                if unk38.consumed == 65535 {
                     println!(
                         "Reached the end of the line! 0xFFFF {:?} | {}",
                         unk38,
@@ -369,9 +375,9 @@ fn main_new() {
                     );
                     break;
                 }
-                streaming_data = &streaming_data[unk38.out1 as usize..];
-                println!("unk38 - {:?}", unk38);
-                if (unk38.out1 + unk38.reported_block_size) as usize > streaming_data.len() {
+                streaming_data = &streaming_data[unk38.consumed as usize..];
+                println!("get_block_size - {:?}", unk38);
+                if (unk38.consumed + unk38.reported_block_size) as usize > streaming_data.len() {
                     println!(
                         "Reached the end of the line! {:?} | {}",
                         unk38,
@@ -380,16 +386,16 @@ fn main_new() {
                     break;
                 }
                 alloc_2.fill(0);
-                let decode_ret = decoder.decode_c(&mut allocd, &streaming_data, &mut alloc_2);
+                let decode_ret = decoder.decode_c(&mut allocd, streaming_data, &mut alloc_2);
                 println!("decode - {:?}", decode_ret);
-                if decode_ret.1 != 0 {
+                if decode_ret.samples != 0 {
                     // debug_assert_eq!((decode_ret.1 * metadata.channels as u32) as usize, alloc_2.len());
                     debug_assert_eq!(
-                        decode_ret.0, unk38.reported_block_size,
+                        decode_ret.consumed, unk38.reported_block_size,
                         "consumed bytes != reported block size"
                     );
                 }
-                let decoded = &alloc_2[..decode_ret.1 as usize * metadata.channels as usize];
+                let decoded = &alloc_2[..decode_ret.samples as usize * metadata.channels as usize];
                 println!("{:X?}", decoded);
                 for i in decoded {
                     bruh.extend_from_slice(&i.to_le_bytes());
@@ -402,7 +408,7 @@ fn main_new() {
                     );
                     break;
                 }
-                streaming_data = &streaming_data[decode_ret.0 as usize..];
+                streaming_data = &streaming_data[decode_ret.consumed as usize..];
             }
             std::fs::write("brih.raw", &bruh).unwrap();
         } else {
