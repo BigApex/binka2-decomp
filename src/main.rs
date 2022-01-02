@@ -46,18 +46,18 @@ extern "fastcall" fn read_callback_old(class: *mut c_void, out: *mut c_void, siz
 }
 
 fn main() {
-    if std::env::args().len() > 1 {
-        if std::env::args().nth(1).unwrap() == "2" {
-            main_old()
-        } else {
-            main_2019()
-        }
-    } else {
-        main_new()
+    if std::env::args().nth(1).is_none() {
+        println!("Invalid usage! mstr [a/2/o]");
+    }
+    match std::env::args().nth(2).unwrap_or("a".to_owned()).as_str() {
+        "o" => main_old(),
+        "2" => main_2019(),
+        _ => main_new(), // Ironically - only this really works
     }
 }
 
 fn main_2019() {
+    eprintln!("BROKEN TF|2 IMPL! NEED TO REFACTOR READER TO TAKE INTO A COUNT HEADER DATA!");
     if let Some(binka) = util::lla("binkawin64_2019.dll") {
         println!("DLL: {:?}", binka);
         let binka = util::get_decoder(binka)
@@ -65,10 +65,7 @@ fn main_2019() {
             .cast::<binka::CBinkA2_2019>();
         let decoder_rust = binka::BinkA2::new(std::ptr::null());
         println!("{:#?}", binka);
-        let file = File::open(
-            "D:\\SteamLibrary\\steamapps\\common\\Apex Legends\\audio\\ship\\general_stream.mstr",
-        )
-        .unwrap();
+        let file = File::open(std::env::args().nth(1).unwrap()).unwrap();
         let mut cursor = BufReader::new(file);
         cursor.seek(SeekFrom::Start(0x20)).unwrap();
         let mut data = [0u8; 24];
@@ -187,6 +184,7 @@ fn main_2019() {
 }
 
 fn main_old() {
+    eprintln!("BROKEN S3 IMPL! NEED TO REFACTOR READER TO TAKE INTO A COUNT HEADER DATA!");
     if let Some(binka) = util::lla("binkawin64_old.dll") {
         println!("DLL: {:?}", binka);
         let binka = util::get_decoder(binka)
@@ -194,10 +192,7 @@ fn main_old() {
             .cast::<binka::CBinkA2_old>();
         let decoder_rust = binka::BinkA2::new(std::ptr::null());
         println!("{:#?}", binka);
-        let file = File::open(
-            "D:\\SteamLibrary\\steamapps\\common\\Apex Legends\\audio\\ship\\general_stream.mstr",
-        )
-        .unwrap();
+        let file = File::open(std::env::args().nth(1).unwrap()).unwrap();
         let mut cursor = BufReader::new(file);
         cursor.seek(SeekFrom::Start(0x20)).unwrap();
         let mut data = [0u8; 24];
@@ -289,10 +284,7 @@ fn main_new() {
         //     0x31, 0x46, 0x43, 0x42, 0x02, 0x01, 0x80, 0xBB, 0x30, 0xDE, 0x03, 0x00, 0xF0, 0x02,
         //     0x00, 0x00, 0x7E, 0xF1, 0x00, 0x00, 0x85, 0x00, 0x01, 0x00,
         // ];
-        let file = File::open(
-            "D:\\SteamLibrary\\steamapps\\common\\Apex Legends\\audio\\ship\\general_stream.mstr",
-        )
-        .unwrap();
+        let file = File::open(std::env::args().nth(1).unwrap()).unwrap();
         const START: u64 = 0x20;
         const HEADER_SIZE: usize = 0x830; // must be gotten from MBNK...
         let mut cursor = BufReader::new(file);
