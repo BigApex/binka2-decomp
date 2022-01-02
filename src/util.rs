@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 
+#[allow(dead_code)]
 #[link(name = "kernel32")]
 extern "stdcall" {
     fn LoadLibraryA(lpLibFileName: *const u8) -> *const c_void;

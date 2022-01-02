@@ -1,3 +1,6 @@
 /target
 
 *.dll
+out*.txt
+err*.txt
+*.raw

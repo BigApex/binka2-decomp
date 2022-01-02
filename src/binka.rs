@@ -23,13 +23,37 @@ type FnOpenStream = extern "fastcall" fn(
     callback: FnCbRead,
     class: *mut u64, // sizeof = 0x120 = 288
 ) -> i64;
-type FnUnk18 = extern "fastcall" fn(data: *mut c_void) -> u8;
-type FnUnk20 = extern "fastcall" fn(
+type FnResetBytePos = extern "fastcall" fn(data: *mut c_void) -> u8;
+type FnGetSampleBytePos = extern "fastcall" fn(
     data: *mut c_void, // might be const
     a2: u32,
     a3: *mut u32,
     a4: *mut u32,
 ) -> u32;
+type FnUnk28 = extern "fastcall" fn(
+    header: *const c_void,
+    header_size: usize,
+    a3: u32,
+    out1: *mut u32,
+    out2: *mut u32,
+) -> u64;
+type FnDecode = extern "fastcall" fn(
+    allocd: *mut c_void,
+    stream_data: *const c_void, // yeah, in theory shouldn't get mutated
+    stream_data_size: usize,    // u32 in reality, idk
+    out_data: *mut c_void,      // idk how size is calculated, amma be real
+    a5: u32,                    // or i32, idk, might be the size of the out_data
+    consumed: *mut u32,
+    out2: *mut u32, // if(out2) -> assert(consumed <= reported (aka prev_out2))
+) -> usize; // might be void
+type FnUnk38 = extern "fastcall" fn(
+    allocd: *mut c_void,
+    stream_data: *const c_void,
+    stream_data_size: usize, // u32 in reality, idk
+    out1: *mut u32,
+    reported_block_size: *mut u32,
+    out3: *mut u32,
+);
 
 #[repr(C)]
 pub struct CBinkA2 {
@@ -38,11 +62,11 @@ pub struct CBinkA2 {
 
     pub parse_metadata: FnParseMetadata,
     pub open_stream: FnOpenStream,
-    pub unk18: FnUnk18, // reset???
-    pub unk20: FnUnk20,
-    _unk28: *const c_void,
-    _unk30: *const c_void,
-    _unk38: *const c_void,
+    pub reset_byte_pos: FnResetBytePos, // reset???
+    pub get_sample_byte_pos: FnGetSampleBytePos,
+    pub unk28: FnUnk28,
+    pub decode: FnDecode,
+    pub unk38: FnUnk38,
     // padding too???
     // _pad: *const c_void,
 }
@@ -56,7 +80,7 @@ type FnOpenStreamOld = extern "fastcall" fn(
 type FnDecoderOld = extern "fastcall" fn(
     class: *mut c_void,
     data: *mut c_void,
-    decoded: *mut u32,
+    decoded: *mut f32,
     size: usize,
     cb: FnCbReadOld,
 ) -> usize;
@@ -70,8 +94,8 @@ pub struct CBinkA2_old {
     pub parse_metadata: FnParseMetadata,
     pub open_stream: FnOpenStreamOld,
     pub decode: FnDecoderOld,
-    pub unk18: FnUnk18,
-    pub unk20: FnUnk20,
+    pub reset_byte_pos: FnResetBytePos,
+    pub get_sample_byte_pos: FnGetSampleBytePos,
     _unk30: *const c_void,
     // padding too???
     // _pad: *const c_void,
@@ -79,7 +103,7 @@ pub struct CBinkA2_old {
 
 type FnDecoderApex2019 = extern "fastcall" fn(
     data: *mut c_void,
-    decoded: *mut u32,
+    decoded: *mut f32,
     size: usize,
     size2: usize,
     cb: FnCbRead,
@@ -95,8 +119,8 @@ pub struct CBinkA2_2019 {
     pub parse_metadata: FnParseMetadata,
     pub open_stream: FnOpenStream,
     pub decode: FnDecoderApex2019,
-    pub unk18: FnUnk18,
-    pub unk20: FnUnk20,
+    pub reset_byte_pos: FnResetBytePos,
+    pub get_sample_byte_pos: FnGetSampleBytePos,
     _unk30: *const c_void,
     // padding too???
     // _pad: *const c_void,
@@ -112,6 +136,13 @@ pub struct BinkA2Metadata {
     pub alloc_size: u32, // "ASI State Block"
     pub unk_c: u32,      // [0xC]+16
     pub frame_len: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Unk38Ret {
+    pub out1: u32,
+    pub reported_block_size: u32,
+    pub out3: u32,
 }
 
 #[derive(Debug)]
@@ -165,11 +196,11 @@ impl BinkA2 {
         }
     }
 
-    pub fn unk20_c(&self, data: &mut [u8], a2: u32) -> (u32, u32, u32) {
+    pub fn get_sample_byte_pos_c(&self, data: &mut [u8], a2: u32) -> (u32, u32, u32) {
         unsafe {
             let mut a3 = 0u32;
             let mut a4 = 0u32;
-            let ret = ((*self.binka).unk20)(
+            let ret = ((*self.binka).get_sample_byte_pos)(
                 data.as_mut_ptr() as *mut _,
                 a2,
                 (&mut a3) as *mut _,
@@ -179,8 +210,62 @@ impl BinkA2 {
         }
     }
 
-    pub fn unk18_c(&self, data: &mut [u8]) -> u8 {
-        unsafe { ((*self.binka).unk18)(data.as_mut_ptr() as *mut _) }
+    pub fn reset_byte_pos_c(&self, data: &mut [u8]) -> u8 {
+        unsafe { ((*self.binka).reset_byte_pos)(data.as_mut_ptr() as *mut _) }
+    }
+
+    pub fn unk28_c(&self, header: &[u8], a3: u32) -> (u64, u32, u32) {
+        unsafe {
+            let mut out = [0u32; 2];
+            let ret = ((*self.binka).unk28)(
+                header.as_ptr() as *const _,
+                header.len(),
+                a3,
+                &mut out[0] as *mut _,
+                &mut out[1] as *mut _,
+            );
+            (ret, out[0], out[1])
+        }
+    }
+
+    pub fn decode_c(
+        &self,
+        allocd: &mut [u8],
+        streaming_data: &[u8],
+        out_data: &mut [u16],
+    ) -> (u32, u32) {
+        unsafe {
+            let mut out = [0u32; 2];
+            ((*self.binka).decode)(
+                allocd.as_mut_ptr() as *mut _,
+                streaming_data.as_ptr() as *const _,
+                streaming_data.len(),
+                out_data.as_mut_ptr() as *mut _,
+                out_data.len() as u32,
+                &mut out[0] as *mut _,
+                &mut out[1] as *mut _, // consumed block size...
+            );
+            (out[0], out[1])
+        }
+    }
+
+    pub fn unk38_c(&self, allocd: &mut [u8], streaming_data: &[u8]) -> Unk38Ret {
+        unsafe {
+            let mut out = [0u32; 3];
+            ((*self.binka).unk38)(
+                allocd.as_mut_ptr() as *mut _,
+                streaming_data.as_ptr() as *const _,
+                streaming_data.len(),
+                &mut out[0] as *mut _,
+                &mut out[1] as *mut _, // reported block size...
+                &mut out[2] as *mut _,
+            );
+            Unk38Ret {
+                out1: out[0],
+                reported_block_size: out[1],
+                out3: out[2],
+            }
+        }
     }
 
     // TODO: refactor to Result<_>
@@ -188,85 +273,83 @@ impl BinkA2 {
     pub fn parse_metadata(&self, data: &[u8]) -> Option<BinkA2Metadata> {
         if data.len() < 24 {
             None
+        } else if &data[0..4] != "1FCB".as_bytes() || data[4] > 2 {
+            None
         } else {
-            if &data[0..4] != "1FCB".as_bytes() || data[4] > 2 {
-                None
+            let channels = data[5] as u16;
+            let samplerate = u16::from_le_bytes(data[6..8].try_into().unwrap()) as u32;
+            let samples_count = u32::from_le_bytes(data[8..12].try_into().unwrap());
+
+            // let alloc_size = 0;
+
+            // ??? number of frames in seek table (C) Kostya's Boring Codec World
+            let prepend_array_size = if data[4] == 2 {
+                u16::from_le_bytes(data[20..22].try_into().unwrap()) as u32
             } else {
-                let channels = data[5] as u16;
-                let samplerate = u16::from_le_bytes(data[6..8].try_into().unwrap()) as u32;
-                let samples_count = u32::from_le_bytes(data[8..12].try_into().unwrap());
+                u32::from_le_bytes(data[20..24].try_into().unwrap())
+            };
 
-                // let alloc_size = 0;
+            /*
+                movzx   r13d, word ptr [rsp+0x3C]
+                add     r13d, 10h
+            */
+            // God knows what it means
+            let unk_c = 16 + u16::from_le_bytes(data[12..14].try_into().unwrap()) as u32; // idk if it's fast or not :/
 
-                // ??? number of frames in seek table (C) Kostya's Boring Codec World
-                let prepend_array_size = if data[4] == 2 {
-                    u16::from_le_bytes(data[20..22].try_into().unwrap()) as u32
+            // This is BinkA1 stuff?
+            let frame_len = if samplerate < 44100 {
+                if samplerate >= 22050 {
+                    1024
                 } else {
-                    u32::from_le_bytes(data[20..24].try_into().unwrap())
-                };
+                    512
+                }
+            } else {
+                2048
+            };
 
-                /*
-                    movzx   r13d, word ptr [rsp+0x3C]
-                    add     r13d, 10h
-                */
-                // God knows what it means
-                let unk_c = 16 + u16::from_le_bytes(data[12..14].try_into().unwrap()) as u32; // idk if it's fast or not :/
-
-                // This is BinkA1 stuff?
-                let frame_len = if samplerate < 44100 {
-                    if samplerate >= 22050 {
-                        1024
-                    } else {
-                        512
-                    }
+            let int_calc = |idk: u32| -> u32 {
+                if samplerate >= 44100 {
+                    (idk.wrapping_mul(1 << 8) & 0xFFFFFFF).wrapping_add(175) & 0xFFFFFFF0
                 } else {
-                    2048
-                };
+                    let mul = if samplerate >= 22050 { 1024 } else { 512 };
+                    (idk.wrapping_mul(2).wrapping_mul(mul) >> 4).wrapping_add(175) & 0xFFFFFFF0
+                }
+            };
 
-                let int_calc = |idk: u32| -> u32 {
-                    if samplerate >= 44100 {
-                        (idk.wrapping_mul(1 << 8) & 0xFFFFFFF).wrapping_add(175) & 0xFFFFFFF0
-                    } else {
-                        let mul = if samplerate >= 22050 { 1024 } else { 512 };
-                        (idk.wrapping_mul(2).wrapping_mul(mul) >> 4).wrapping_add(175) & 0xFFFFFFF0
-                    }
-                };
+            let half_channel = (channels + 1) / 2;
+            let alloc_size_samples = if half_channel != 0 {
+                (0..half_channel)
+                    .map(|i| {
+                        // TODO: are names even correct?
+                        let chan_id = i * 2;
+                        int_calc(
+                            2 - if channels.wrapping_sub(chan_id) != 0 {
+                                1
+                            } else {
+                                0
+                            },
+                        )
+                    })
+                    .reduce(|accum: u32, i| accum.wrapping_add(i))
+                    .unwrap() // Should never panic?
+            } else {
+                0
+            };
+            // println!("{} {}|{}", alloc_size_samples, channels, half_channel);
+            // fancy round to 64?
+            let alloc_size_samples_round = (alloc_size_samples + 128 + 63) & 0xFFFFFFC0;
+            let alloc_size =
+                (alloc_size_samples_round + (4 * prepend_array_size) + 4 + 63) & 0xFFFFFFC0;
 
-                let half_channel = (channels + 1) / 2;
-                let alloc_size_samples = if half_channel != 0 {
-                    (0..half_channel)
-                        .map(|i| {
-                            // TODO: are names even correct?
-                            let chan_id = i * 2;
-                            int_calc(
-                                2 - if channels.wrapping_sub(chan_id) != 0 {
-                                    1
-                                } else {
-                                    0
-                                },
-                            )
-                        })
-                        .reduce(|accum: u32, i| accum.wrapping_add(i))
-                        .unwrap() // Should never panic?
-                } else {
-                    0
-                };
-                // println!("{} {}|{}", alloc_size_samples, channels, half_channel);
-                // fancy round to 64?
-                let alloc_size_samples_round = (alloc_size_samples + 128 + 63) & 0xFFFFFFC0;
-                let alloc_size =
-                    (alloc_size_samples_round + (4 * prepend_array_size) + 4 + 63) & 0xFFFFFFC0;
-
-                Some(BinkA2Metadata {
-                    channels,
-                    samplerate,
-                    samples_count,
-                    //
-                    alloc_size,
-                    unk_c,
-                    frame_len,
-                })
-            }
+            Some(BinkA2Metadata {
+                channels,
+                samplerate,
+                samples_count,
+                //
+                alloc_size,
+                unk_c,
+                frame_len,
+            })
         }
     }
 }
