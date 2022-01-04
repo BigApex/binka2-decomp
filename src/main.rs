@@ -375,7 +375,8 @@ fn main_new() {
 
             let mut alloc_2 = vec![0u16; 8192 * metadata.channels as usize];
             let mut streaming_data = &streaming_data_brih[..]; //&data[seek_shit.0 as usize..]; // &mut streaming_data_real[..];
-            let mut bruh = Vec::<u8>::with_capacity(metadata.samples_count as usize * 2);
+            let max_size = metadata.samples_count as usize * 2 * metadata.channels as usize;
+            let mut bruh = Vec::<u8>::with_capacity(max_size);
             loop {
                 let mut allocd_clone = allocd.clone();
                 let unk38 = decoder.get_block_size_c(&mut allocd, streaming_data);
@@ -415,13 +416,17 @@ fn main_new() {
                 println!("{:X?}", decoded);
                 for i in decoded {
                     bruh.extend_from_slice(&i.to_le_bytes());
+                    if bruh.len() == bruh.capacity() {
+                        break;
+                    }
                 }
-                if bruh.len() >= metadata.samples_count as usize * 2 * metadata.channels as usize {
+                if bruh.len() >= max_size {
                     println!(
                         "Not going overboard! {} >= {}",
                         bruh.len(),
-                        metadata.samples_count as usize * 2 * metadata.channels as usize
+                        max_size
                     );
+                    debug_assert_eq!(bruh.len(), max_size);
                     break;
                 }
                 streaming_data = &streaming_data[decode_ret.consumed as usize..];
