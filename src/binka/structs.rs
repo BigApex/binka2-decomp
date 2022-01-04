@@ -9,7 +9,7 @@ pub struct BinkA2Header {
     pub sample_rate: u16,
     pub samples_count: u32,
     pub max_block_size: u16,
-    pub unk_e: u16, // padding?
+    pub is_new_codec: u16, // determines BinkA ACTUAL 2.0
     pub total_size: u32,
 
     // next two are true only if version is 2
@@ -25,7 +25,7 @@ pub struct BinkA2ClassHeader {
     pub sample_rate: u16,
     pub samples_count: u32,
     pub max_block_size: u16,
-    pub unk_e: u16,
+    pub is_new_codec: u16,
     pub total_size: u32,
 
     // This is already parsed
@@ -69,11 +69,11 @@ pub struct BinkA2DecoderInternal {
 #[repr(C)]
 pub struct CBinkA2 {
     pub idk: u32,
-    pub idk2: u32,
+    pub idk2: u32, // might be audio type
 
     pub parse_metadata: FnParseMetadata,
     pub open_stream: FnOpenStream,
-    pub reset_byte_pos: FnResetBytePos, // reset???
+    pub reset_byte_pos: FnResetBytePos,
     pub get_sample_byte_pos: FnGetSampleBytePos,
     pub get_seek_pos_data: FnGetSeekPosData,
     pub decode: FnDecode,

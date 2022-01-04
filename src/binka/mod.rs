@@ -41,22 +41,19 @@ impl BinkA2 {
     }
 
     // TODO: refactor to Result<_>
-    // TODO: finish
     pub fn parse_metadata(&self, data: &[u8]) -> Option<BinkA2Metadata> {
         if data.len() < 24 || (&data[0..4] != b"1FCB" || data[4] > 2) {
             None
         } else {
             let header = unsafe { &*(data.as_ptr() as *const BinkA2Header) };
 
-            let channels = header.channels as u16; //data[5] as u16;
-            let samplerate = header.sample_rate as u32; //u16::from_le_bytes(data[6..8].try_into().unwrap()) as u32;
-            let samples_count = header.samples_count; //u32::from_le_bytes(data[8..12].try_into().unwrap());
-
-            // let alloc_size = 0;
+            let channels = header.channels as u16;
+            let samplerate = header.sample_rate as u32;
+            let samples_count = header.samples_count;
 
             // ??? number of frames in seek table (C) Kostya's Boring Codec World
             let prepend_array_size = if header.version == 2 {
-                u16::from_le_bytes(data[20..22].try_into().unwrap()) as u32
+                header.seek_table_size as u32
             } else {
                 u32::from_le_bytes(data[20..24].try_into().unwrap())
             };
@@ -125,7 +122,7 @@ impl BinkA2 {
             data_header.sample_rate = header.sample_rate;
             data_header.samples_count = header.samples_count;
             data_header.max_block_size = header.max_block_size;
-            data_header.unk_e = header.unk_e;
+            data_header.is_new_codec = header.is_new_codec;
             data_header.total_size = header.total_size;
             let (seek_table_size, unk16) = if header.version != 2 {
                 todo!()
@@ -216,7 +213,7 @@ impl BinkA2 {
                     decoder,
                     header.sample_rate as u32,
                     decoder_chan_num[i] as u16,
-                    if header.unk_e != 0 {
+                    if header.is_new_codec != 0 {
                         BINKA2_FLAG_V2 | BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_IDK
                     } else {
                         BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_IDK
@@ -384,7 +381,6 @@ impl BinkA2 {
     }
 
     fn get_block_size_detail(&self, allocd: &mut [u8], streaming_data: &[u8]) -> BinkA2Block {
-        // TODO: swap for rust impl
         self.reset_start_frame(allocd);
 
         let mut pos = 0;
@@ -510,7 +506,7 @@ fn get_total_decoders_alloc_size(channels: u16, samplerate: u32) -> u32 {
                 } else {
                     0
                 };
-                int_calc(samplerate, a2)
+                get_decoder_size(samplerate, a2)
             })
             .reduce(|accum: u32, i| accum.wrapping_add(i))
             .unwrap() // Should never panic?
@@ -524,14 +520,13 @@ fn get_decoder_alloc_size_channel_num(channels: u16, samplerate: u32) -> (Vec<u3
     let half_channel = (channels + 1) / 2;
     let buf = (0..half_channel)
         .map(|i| {
-            // TODO: are names even correct?
             let chan_id = i * 2;
             let a2 = 2 - if channels.wrapping_sub(chan_id) != 0 {
                 1
             } else {
                 0
             };
-            int_calc(samplerate, a2)
+            get_decoder_size(samplerate, a2)
         })
         .collect::<Vec<_>>();
 
@@ -548,7 +543,7 @@ fn get_decoder_alloc_size_channel_num(channels: u16, samplerate: u32) -> (Vec<u3
     }
 }
 
-fn int_calc(samplerate: u32, channels: u32) -> u32 {
+fn get_decoder_size(samplerate: u32, channels: u32) -> u32 {
     if samplerate >= 44100 {
         (channels.wrapping_mul(1 << 8) & 0xFFFFFFF).wrapping_add(160 + 15) & 0xFFFFFFF0
     } else {
@@ -574,7 +569,7 @@ fn init_decoder(
         .fill(0)
     };
 
-    let (transform_size, transform_big, transform_small) = if sample_rate < 44100 {
+    let (transform_size, transform_small, transform_big) = if sample_rate < 44100 {
         if sample_rate < 22050 {
             BINKA2_TRANSFORMS[2]
         } else {
@@ -584,10 +579,10 @@ fn init_decoder(
         BINKA2_TRANSFORMS[0]
     };
     debug_assert!(
-        transform_big > transform_small,
+        transform_small > transform_big,
         "{} <= {}",
-        transform_big,
-        transform_small
+        transform_small,
+        transform_big
     );
 
     let unk10 = 2 * channels as u32 * transform_size;
@@ -624,7 +619,6 @@ fn init_decoder(
         .iter()
         .position(|freq| *freq >= half_rate)
         .unwrap_or(BINKA2_CRIT_FREQS.len());
-    // debug_assert_ne!(bands_num, BINKA2_CRIT_FREQS.len(), "Ideally this should never happen");
 
     decoder.ptr = unsafe { ptr.add(1).cast() };
     decoder.unk10 = unk10;

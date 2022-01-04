@@ -6,12 +6,12 @@ pub const BINKA2_BANDS_MAX: usize = 0x19;
 // These were provided by people who had SDK
 pub const BINKA2_FLOAT_CONST: f32 = 1.41421356237309504880;
 const BINKA2_TRANSFORMS_INTERNAL: [f32; 4] = [
-    2f32 / 64f32,                        // 20248
+    2f32 / 64f32,                        // 2048
     2f32 / (32f32 * BINKA2_FLOAT_CONST), // 2048, 1024
     2f32 / 32f32,                        // 1024, 2048
     2f32 / (16f32 * BINKA2_FLOAT_CONST), // 1024
 ];
-// first small then big
+// first big then small
 pub const BINKA2_TRANSFORMS: [(u32, f32, f32); 3] = [
     (
         2048,

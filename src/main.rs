@@ -4,6 +4,8 @@ use std::{
     io::{BufReader, Read, Seek, SeekFrom},
 };
 
+use crate::binka::{BinkA2ClassHeader, BinkA2DecoderInternal};
+
 mod binka;
 mod util;
 
@@ -339,6 +341,7 @@ fn main_new() {
             println!(
                 "open_stream - {}",
                 decoder.open_stream_c(
+                // decoder.open_stream(
                     &mut allocd,
                     read_callback,
                     (&mut cursor) as *mut _ as *mut c_void
@@ -346,16 +349,15 @@ fn main_new() {
             );
             
             {
-                // let allocd_clone = allocd.clone();
+                let allocd_clone = allocd.clone();
                 allocd.fill(0);
                 cursor.seek(SeekFrom::Start(START)).unwrap();
                 decoder.open_stream(&mut allocd, read_callback, (&mut cursor) as *mut _ as *mut c_void);
                 // Explanation - due to float differences it's not comparable
                 // debug_assert_eq!(allocd_clone, allocd, "poor open_stream");
-                // debug_assert_eq!(allocd_clone[128..128+160], allocd[128..128+160], "poor open_stream's decoder");
+                eprintln!("{} {}", unsafe { (*allocd_clone[128..].as_ptr().cast::<BinkA2DecoderInternal>()).transform_ratio }, unsafe { (*allocd[128..].as_ptr().cast::<BinkA2DecoderInternal>()).transform_ratio });
+                debug_assert_eq!(allocd_clone[128..128+160], allocd[128..128+160], "poor open_stream's decoder");
             }
-            
-            // println!("0x{:X}", u32::from_le_bytes((&allocd[16..20]).try_into().unwrap()));
             let seek_shit = decoder.get_sample_byte_pos_c(&mut allocd, 0);
             println!("get_sample_byte_pos - {:?}", seek_shit);
             debug_assert_eq!(seek_shit, decoder.get_sample_byte_pos(&allocd, 0));
@@ -363,13 +365,13 @@ fn main_new() {
             println!(
                 "reset_start_frame - {:?} - {}",
                 decoder.reset_start_frame(&mut allocd),
-                // decoder.reset_byte_pos_c(&mut allocd),
                 allocd[32],
             );
-            // debug_assert_eq!(allocd[320], 1);
 
-            // let streaming_data = &data[seek_shit.0 as usize..];
+            // let allocd_header = unsafe { &*(allocd.as_ptr() as *mut BinkA2ClassHeader) };
+
             cursor.seek(SeekFrom::Start(streaming_offset)).unwrap();
+            // let mut streaming_data_real = vec![0u8; allocd_header.total_size as usize - HEADER_SIZE + 8];
             let mut streaming_data_real = vec![0u8; metadata.samples_count as usize];
             cursor.read_exact(&mut streaming_data_real).unwrap();
             let streaming_data_brih =
