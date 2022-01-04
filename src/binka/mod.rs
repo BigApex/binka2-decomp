@@ -453,6 +453,8 @@ impl BinkA2 {
             };
         }
 
+        let header = unsafe { &*(allocd.as_ptr() as *const BinkA2ClassHeader) };
+
         if [streaming_data[0], streaming_data[1]] != [0x99, 0x99] {
             self.get_block_size_detail(allocd, streaming_data)
         } else {
@@ -471,7 +473,7 @@ impl BinkA2 {
                 (size, 4)
             };
 
-            if size > u16::from_le_bytes([allocd[12], allocd[13]]) {
+            if size > header.max_block_size {
                 self.get_block_size_detail(allocd, streaming_data)
             } else {
                 BinkA2Block {

@@ -338,6 +338,13 @@ fn main_new() {
 
             let mut allocd = vec![0u8; metadata.alloc_size as usize];
             cursor.seek(SeekFrom::Start(START)).unwrap();
+            let tmp_ret = decoder.open_stream_c(
+                &mut allocd,
+                read_callback,
+                (&mut cursor) as *mut _ as *mut c_void,
+            );
+            debug_assert_ne!(tmp_ret, 0, "open_stream failed so math table didn't init!");
+            cursor.seek(SeekFrom::Start(START)).unwrap();
             println!(
                 "open_stream - {}",
                 decoder.open_stream(
