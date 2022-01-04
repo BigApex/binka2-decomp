@@ -135,15 +135,22 @@ impl BinkA2 {
             let decoders_num = (header.channels + 1) >> 1;
             let decoder_chan_num = get_channel_num_decoders(header.channels as u16);
 
-            let (decoder_alloc_sizes, decoder_alloc_size_total) = get_decoder_alloc_size_channel_num(
-                header.channels as u16,
-                header.sample_rate as u32,
+            let (decoder_alloc_sizes, decoder_alloc_size_total) =
+                get_decoder_alloc_size_channel_num(
+                    header.channels as u16,
+                    header.sample_rate as u32,
+                );
+            debug_assert_eq!(
+                decoder_alloc_size_total,
+                get_total_decoders_alloc_size(header.channels as u16, header.sample_rate as u32)
             );
-            debug_assert_eq!(decoder_alloc_size_total, get_total_decoders_alloc_size(header.channels as u16, header.sample_rate as u32));
-            let decoder_alloc_size_samples_round = (decoder_alloc_size_total + 128 + 63) & 0xFFFFFFC0;
+            let decoder_alloc_size_samples_round =
+                (decoder_alloc_size_total + 128 + 63) & 0xFFFFFFC0;
 
             let seek_array = unsafe {
-                let seek_array = data.as_mut_ptr().add(decoder_alloc_size_samples_round as usize);
+                let seek_array = data
+                    .as_mut_ptr()
+                    .add(decoder_alloc_size_samples_round as usize);
                 // *data.as_mut_ptr().add(72).cast::<*mut u8>() = seek_array;
                 // *data.as_mut_ptr().add(28).cast::<u32>() = (2 * data_header.seek_table_size) + 24;
                 data_header.seek_table = seek_array.cast();

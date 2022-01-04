@@ -340,24 +340,13 @@ fn main_new() {
             cursor.seek(SeekFrom::Start(START)).unwrap();
             println!(
                 "open_stream - {}",
-                decoder.open_stream_c(
-                // decoder.open_stream(
+                decoder.open_stream(
                     &mut allocd,
                     read_callback,
                     (&mut cursor) as *mut _ as *mut c_void
                 )
             );
-            
-            {
-                let allocd_clone = allocd.clone();
-                allocd.fill(0);
-                cursor.seek(SeekFrom::Start(START)).unwrap();
-                decoder.open_stream(&mut allocd, read_callback, (&mut cursor) as *mut _ as *mut c_void);
-                // Explanation - due to float differences it's not comparable
-                // debug_assert_eq!(allocd_clone, allocd, "poor open_stream");
-                eprintln!("{} {}", unsafe { (*allocd_clone[128..].as_ptr().cast::<BinkA2DecoderInternal>()).transform_ratio }, unsafe { (*allocd[128..].as_ptr().cast::<BinkA2DecoderInternal>()).transform_ratio });
-                debug_assert_eq!(allocd_clone[128..128+160], allocd[128..128+160], "poor open_stream's decoder");
-            }
+
             let seek_shit = decoder.get_sample_byte_pos_c(&mut allocd, 0);
             println!("get_sample_byte_pos - {:?}", seek_shit);
             debug_assert_eq!(seek_shit, decoder.get_sample_byte_pos(&allocd, 0));
