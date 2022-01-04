@@ -344,17 +344,29 @@ fn main_new() {
                     (&mut cursor) as *mut _ as *mut c_void
                 )
             );
+            
+            {
+                // let allocd_clone = allocd.clone();
+                allocd.fill(0);
+                cursor.seek(SeekFrom::Start(START)).unwrap();
+                decoder.open_stream(&mut allocd, read_callback, (&mut cursor) as *mut _ as *mut c_void);
+                // Explanation - due to float differences it's not comparable
+                // debug_assert_eq!(allocd_clone, allocd, "poor open_stream");
+                // debug_assert_eq!(allocd_clone[128..128+160], allocd[128..128+160], "poor open_stream's decoder");
+            }
+            
             // println!("0x{:X}", u32::from_le_bytes((&allocd[16..20]).try_into().unwrap()));
             let seek_shit = decoder.get_sample_byte_pos_c(&mut allocd, 0);
             println!("get_sample_byte_pos - {:?}", seek_shit);
             debug_assert_eq!(seek_shit, decoder.get_sample_byte_pos(&allocd, 0));
             // this is pointer dependant which we obv loose and can't clone at all
             println!(
-                "reset_byte_pos - {:?} - {}",
-                decoder.reset_byte_pos(&mut allocd),
+                "reset_start_frame - {:?} - {}",
+                decoder.reset_start_frame(&mut allocd),
+                // decoder.reset_byte_pos_c(&mut allocd),
                 allocd[32],
             );
-            debug_assert_eq!(allocd[320], 1);
+            // debug_assert_eq!(allocd[320], 1);
 
             // let streaming_data = &data[seek_shit.0 as usize..];
             cursor.seek(SeekFrom::Start(streaming_offset)).unwrap();

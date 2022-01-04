@@ -1,4 +1,4 @@
-use super::types::*;
+use super::{types::*, BINKA2_BANDS_MAX};
 use std::ffi::c_void;
 
 #[repr(C)]
@@ -8,8 +8,9 @@ pub struct BinkA2Header {
     pub channels: u8,
     pub sample_rate: u16,
     pub samples_count: u32,
-    pub max_block_size: u32,
-    pub unk10: u32,
+    pub max_block_size: u16,
+    pub unk_e: u16, // padding?
+    pub total_size: u32,
 
     // next two are true only if version is 2
     pub seek_table_size: u16,
@@ -17,18 +18,52 @@ pub struct BinkA2Header {
 }
 
 #[repr(C)]
-pub struct BinkA2HeaderClass {
+pub struct BinkA2ClassHeader {
     pub header: u32,
     pub version: u8,
     pub channels: u8,
     pub sample_rate: u16,
     pub samples_count: u32,
-    pub max_block_size: u32,
-    pub unk10: u32,
+    pub max_block_size: u16,
+    pub unk_e: u16,
+    pub total_size: u32,
 
     // This is already parsed
     pub seek_table_size: u32,
     pub unk16: u32,
+
+    // Non header data
+    pub min_stream_size: u32,
+
+    pub decoders_num: u8,
+    pub decoders_byte: [u8; 4],
+    _pad: [u8; 3],
+    pub decoders: [*mut u8; 4],
+
+    pub seek_table: *mut u32,
+
+    _unk: [u8; 48],
+}
+
+#[repr(C)]
+pub struct BinkA2DecoderInternal {
+    pub ptr: *mut c_void,
+
+    pub transform_size: u32,
+    pub transform_ratio: f32, // get ratio'd liberal
+
+    pub unk10: u32,
+    pub unk14: u32,
+
+    pub bits_shift: u32,
+    pub channels: u32,
+    pub start_frame: u32,
+    pub bands_num: u32,
+    _pad: u32,
+    pub flags: u32, // up to 4
+    pub size: u32,
+
+    pub bands: [u32; BINKA2_BANDS_MAX + 2], // some bands might be padding actually...
 }
 
 #[repr(C)]
@@ -159,9 +194,9 @@ mod tests {
         }
 
         #[test]
-        fn unk10_offset() {
+        fn total_size_offset() {
             assert_eq!(
-                unsafe { &(*(::std::ptr::null::<BinkA2Header>())).unk10 as *const _ as usize },
+                unsafe { &(*(::std::ptr::null::<BinkA2Header>())).total_size as *const _ as usize },
                 0x10usize
             );
         }
@@ -186,21 +221,21 @@ mod tests {
     }
 
     #[allow(deref_nullptr)]
-    mod binka2_header_class {
+    mod binka2_class_header {
         use super::*;
 
         // TODO
         #[test]
         fn size() {
             // in reality it's more like 128?
-            assert_eq!(std::mem::size_of::<BinkA2HeaderClass>(), 0x1C);
+            assert_eq!(std::mem::size_of::<BinkA2ClassHeader>(), 128);
         }
 
         #[test]
         fn header_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).header as *const _ as usize
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).header as *const _ as usize
                 },
                 0usize
             );
@@ -210,7 +245,7 @@ mod tests {
         fn version_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).version as *const _ as usize
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).version as *const _ as usize
                 },
                 4usize
             );
@@ -220,7 +255,7 @@ mod tests {
         fn channels_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).channels as *const _ as usize
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).channels as *const _ as usize
                 },
                 5usize
             );
@@ -230,7 +265,7 @@ mod tests {
         fn sample_rate_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).sample_rate as *const _ as usize
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).sample_rate as *const _ as usize
                 },
                 6usize
             );
@@ -240,7 +275,7 @@ mod tests {
         fn samples_count_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).samples_count as *const _ as usize
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).samples_count as *const _ as usize
                 },
                 8usize
             );
@@ -250,7 +285,7 @@ mod tests {
         fn max_block_size_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).max_block_size as *const _
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).max_block_size as *const _
                         as usize
                 },
                 12usize
@@ -258,9 +293,11 @@ mod tests {
         }
 
         #[test]
-        fn unk10_offset() {
+        fn total_size_offset() {
             assert_eq!(
-                unsafe { &(*(::std::ptr::null::<BinkA2HeaderClass>())).unk10 as *const _ as usize },
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).total_size as *const _ as usize
+                },
                 0x10usize
             );
         }
@@ -269,7 +306,7 @@ mod tests {
         fn seek_table_size_offset() {
             assert_eq!(
                 unsafe {
-                    &(*(::std::ptr::null::<BinkA2HeaderClass>())).seek_table_size as *const _
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).seek_table_size as *const _
                         as usize
                 },
                 20usize
@@ -279,8 +316,59 @@ mod tests {
         #[test]
         fn unk16_offset() {
             assert_eq!(
-                unsafe { &(*(::std::ptr::null::<BinkA2HeaderClass>())).unk16 as *const _ as usize },
+                unsafe { &(*(::std::ptr::null::<BinkA2ClassHeader>())).unk16 as *const _ as usize },
                 24usize
+            );
+        }
+
+        #[test]
+        fn min_stream_size_offset() {
+            assert_eq!(
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).min_stream_size as *const _
+                        as usize
+                },
+                0x1Cusize
+            );
+        }
+
+        #[test]
+        fn decoders_num_offset() {
+            assert_eq!(
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).decoders_num as *const _ as usize
+                },
+                0x20usize
+            );
+        }
+
+        #[test]
+        fn decoders_byte_offset() {
+            assert_eq!(
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).decoders_byte as *const _ as usize
+                },
+                0x21usize
+            );
+        }
+
+        #[test]
+        fn decoders_offset() {
+            assert_eq!(
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).decoders as *const _ as usize
+                },
+                0x28usize
+            );
+        }
+
+        #[test]
+        fn seek_table_offset() {
+            assert_eq!(
+                unsafe {
+                    &(*(::std::ptr::null::<BinkA2ClassHeader>())).seek_table as *const _ as usize
+                },
+                0x48usize
             );
         }
     }
