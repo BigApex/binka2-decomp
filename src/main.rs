@@ -330,10 +330,9 @@ fn main_new() {
 
             // func before decoder...
             // wtf? return is identical to get_sample_byte_pos...
-            println!(
-                "get_seek_pos_data - {:?}",
-                decoder.get_seek_pos_data_c(&data, 0)
-            );
+            let seek_data_ret = decoder.get_seek_pos_data_c(&data, 0);
+            println!("get_seek_pos_data - {:?}", seek_data_ret,);
+            debug_assert_eq!(seek_data_ret, binka::BinkA2::get_seek_pos_data(&data, 0));
 
             let mut allocd = vec![0u8; metadata.alloc_size as usize];
             cursor.seek(SeekFrom::Start(START)).unwrap();
@@ -347,26 +346,33 @@ fn main_new() {
             );
             // println!("0x{:X}", u32::from_le_bytes((&allocd[16..20]).try_into().unwrap()));
             let seek_shit = decoder.get_sample_byte_pos_c(&mut allocd, 0);
-            println!("get_sample_byte_pos - {:?}", seek_shit,);
+            println!("get_sample_byte_pos - {:?}", seek_shit);
+            debug_assert_eq!(seek_shit, decoder.get_sample_byte_pos(&allocd, 0));
+            // this is pointer dependant which we obv loose and can't clone at all
             println!(
-                "reset_byte_pos - {:?}",
-                decoder.reset_byte_pos_c(&mut allocd)
+                "reset_byte_pos - {:?} - {}",
+                decoder.reset_byte_pos(&mut allocd),
+                allocd[32],
             );
+            debug_assert_eq!(allocd[320], 1);
 
             // let streaming_data = &data[seek_shit.0 as usize..];
             cursor.seek(SeekFrom::Start(streaming_offset)).unwrap();
             let mut streaming_data_real = vec![0u8; metadata.samples_count as usize];
             cursor.read_exact(&mut streaming_data_real).unwrap();
             let streaming_data_brih =
-                [&data[seek_shit.0 as usize..], &streaming_data_real[..]].concat();
+                [&data[seek_shit.pos as usize..], &streaming_data_real[..]].concat();
 
             let mut alloc_2 = vec![0u16; 8192 * metadata.channels as usize];
             let mut streaming_data = &streaming_data_brih[..]; //&data[seek_shit.0 as usize..]; // &mut streaming_data_real[..];
             let mut bruh = Vec::<u8>::with_capacity(metadata.samples_count as usize * 2);
             loop {
-                // wtf, the function which did streaming by itself died _(
+                let mut allocd_clone = allocd.clone();
                 let unk38 = decoder.get_block_size_c(&mut allocd, streaming_data);
-                // let streaming_data = &mut streaming_data[unk38.out1 as usize..];
+                debug_assert_eq!(
+                    unk38,
+                    decoder.get_block_size(&mut allocd_clone, streaming_data)
+                );
                 if unk38.consumed == 65535 {
                     println!(
                         "Reached the end of the line! 0xFFFF {:?} | {}",
