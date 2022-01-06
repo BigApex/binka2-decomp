@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use rustdct::algorithm::Type2And3ConvertToFft;
 use rustdct::rustfft::{num_complex::Complex, FftPlanner};
 use rustdct::Dct3;
@@ -46,22 +48,17 @@ pub fn idct(
     // modulation
     let mut transform = vec![Complex::<f32>::default(); transform_size as usize / 2];
     {
+        #[allow(clippy::excessive_precision)]
         const FACTOR: f32 = 1.4142135623730950488f32;
-        // transform[0] = coeffs[0] + coeffs[0];
-        // transform[1] = FACTOR * coeffs[transform_size as usize / 2];
         transform[0].re = coeffs[0] + coeffs[0];
         transform[0].im = FACTOR * coeffs[transform_size as usize / 2];
 
         for i in 1..transform_size as usize / 2 {
             let a = (coeffs[i], coeffs[transform_size as usize - i]);
-            // transform[(i*2) + 0] = twiddles[i].re * a.0 - twiddles[i].im * a.1;
-            // transform[(i*2) + 1] = twiddles[i].re * a.1 + twiddles[i].im * a.0;
             transform[i].re = twiddles[i].re * a.0 - twiddles[i].im * a.1;
             transform[i].im = twiddles[i].re * a.1 + twiddles[i].im * a.0;
         }
     }
-
-    // eprintln!("{:#?}", transform);
 
     // idk
     let tmp = transform[0];
@@ -69,8 +66,6 @@ pub fn idct(
     transform[0].im = (tmp.re - tmp.im) / 2f32;
 
     if transform_size/4 > 0 {
-        // todo!("conditional prepass");
-        // let twiddle_start = transform_size/4;
         let angle_constant = std::f32::consts::PI * -2f32 / transform_size as f32;
         let twiddles = (0..transform_size as usize / 4)
             .map(|i| Complex::from_polar(1f32, angle_constant * i as f32))
@@ -103,15 +98,7 @@ pub fn idct(
     let fft = planner.plan_fft_forward(transform_size as usize / 2);
     fft.process(&mut transform);
 
-    // eprintln!("{:#?}", transform);
-
     let transform_scalar = unsafe { std::slice::from_raw_parts(transform.as_ptr().cast::<f32>(), transform_size as usize) };
-
-    // todo!("fft");
-
-    // eprintln!("{:#?}", &transform);
-
-    // let transform_scalar = transform.as_slice();
 
     for i in 0..(transform_size as usize / 2) {
         let a = transform_scalar[i] * transform_ratio;
@@ -120,12 +107,8 @@ pub fn idct(
         let a = a as i32;
         let b = b as i32;
 
-        // eprintln!("{} {}", a, b);
-
         let a = a.min(32767).max(-32768);
         let b = b.min(32767).max(-32768);
-
-        // eprintln!("{} {} | {} {}", a, a as i16 as u16, b, b as i16 as u16);
 
         let a = a as i16 as u16;
         let b = b as i16 as u16;

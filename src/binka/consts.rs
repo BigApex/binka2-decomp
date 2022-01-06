@@ -1,3 +1,5 @@
+#![allow(clippy::excessive_precision)]
+
 pub const BINKA2_FLAG_V2: u32 = 4; // hot stuff unused in TF|2 and Apex's MSS?
 pub const BINKA2_FLAG_NOT_ONE_CHAN: u32 = 2; // set only when 1 channel is present
 pub const BINKA2_FLAG_DCT: u32 = 1; // newer version-ish?

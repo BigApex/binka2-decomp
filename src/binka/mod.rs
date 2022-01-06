@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 mod c_impl;
 mod consts;
 mod math;
@@ -94,13 +96,15 @@ impl BinkA2 {
                 samples_count,
                 //
                 alloc_size,
-                max_stream_size: max_stream_size,
+                max_stream_size,
                 frame_len,
             })
         }
     }
 
     pub fn open_stream<T>(&self, data: &mut [u8], cb: FnCbRead, class: *mut T) -> u64 {
+        // we read the data right after that...
+        #[allow(clippy::uninit_assumed_init)]
         let mut header: BinkA2Header = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         let read = cb(
             (&mut header) as *mut _ as *mut _,
@@ -187,10 +191,10 @@ impl BinkA2 {
                             // eprintln!("Brih");
                             return 0;
                         }
-                        for i in 0..v23 as usize {
+                        for (i, size) in buf.iter().enumerate().take(v23 as usize) {
                             unsafe {
                                 *seek_array.add(v43 + i) = seek_pos;
-                                seek_pos += buf[i] as u32;
+                                seek_pos += *size as u32;
                             }
                         }
                     }

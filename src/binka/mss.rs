@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::ffi::c_void;
 
 use bitbuffer::{BitReadBuffer, BitReadStream, LittleEndian};
@@ -23,7 +25,7 @@ pub fn get_channel_num_decoders(channels: u16) -> Vec<u8> {
 
 pub fn get_total_decoders_alloc_size(channels: u16, samplerate: u32) -> u32 {
     let half_channel = (channels + 1) / 2;
-    let alloc_size_samples = if half_channel != 0 {
+    if half_channel != 0 {
         (0..half_channel)
             .map(|i| {
                 // TODO: are names even correct?
@@ -39,8 +41,7 @@ pub fn get_total_decoders_alloc_size(channels: u16, samplerate: u32) -> u32 {
             .unwrap() // Should never panic?
     } else {
         0
-    };
-    alloc_size_samples
+    }
 }
 
 pub fn get_decoder_alloc_size_channel_num(channels: u16, samplerate: u32) -> (Vec<u32>, u32) {
@@ -164,8 +165,8 @@ pub fn init_decoder(
     };
 
     let transform_size_half = transform_size / 2;
-    for i in 0..bands_num {
-        let band = (BINKA2_CRIT_FREQS[i] * transform_size_half) / half_rate;
+    for (i, freq) in BINKA2_CRIT_FREQS.iter().enumerate().take(bands_num) {
+        let band = (freq * transform_size_half) / half_rate;
         decoder.bands[i] = if band != 0 { band } else { 1 }
     }
     decoder.bands[bands_num] = transform_size_half;
@@ -264,7 +265,7 @@ fn decode_frame(
     bits_shift: u32,
     ptr: *mut c_void,
 ) -> BinkA2DecoderDecompress {
-    let bit_buffer = BitReadBuffer::new(&input, LittleEndian);
+    let bit_buffer = BitReadBuffer::new(input, LittleEndian);
     let mut bitreader = BitReadStream::new(bit_buffer);
 
     if (flags & BINKA2_FLAG_DCT) != 0 {
@@ -375,9 +376,10 @@ fn read_channel_1(
                 // let q = [quants[cur_band], -quants[cur_band]];
                 // there's also a loop that does a few at a time but who cares
 
-                for c_pos in i as usize..band_end as usize {
+                // for c_pos in i as usize..band_end as usize {
+                for ceoff in coeffs.iter_mut().take(band_end as usize).skip(i as usize) {
                     let v = bitreader.read_int::<u32>(bits_len as usize).unwrap();
-                    coeffs[c_pos] = if v == 0 {
+                    *ceoff = if v == 0 {
                         0f32
                     } else {
                         (v as f32)
