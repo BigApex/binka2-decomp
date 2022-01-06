@@ -1,5 +1,7 @@
 mod c_impl;
 mod consts;
+mod math;
+mod mss;
 pub mod structs;
 mod types;
 
@@ -7,6 +9,8 @@ use std::usize;
 
 pub use c_impl::*;
 pub use consts::*;
+use math::*;
+use mss::*;
 pub use structs::*;
 pub use types::{FnCbRead, FnCbReadOld};
 
@@ -221,9 +225,9 @@ impl BinkA2 {
                     header.sample_rate as u32,
                     decoder_chan_num[i] as u16,
                     if header.is_new_codec != 0 {
-                        BINKA2_FLAG_V2 | BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_IDK
+                        BINKA2_FLAG_V2 | BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_DCT
                     } else {
-                        BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_IDK
+                        BINKA2_FLAG_NOT_ONE_CHAN | BINKA2_FLAG_DCT
                     },
                 )
                 .cast();
@@ -242,14 +246,14 @@ impl BinkA2 {
     /// Resets start frame to 1 for all internal decoders
     pub fn reset_start_frame(&self, allocd: &mut [u8]) {
         let data = unsafe { &*(allocd.as_mut_ptr() as *mut BinkA2ClassHeader) };
-        let size = data.decoders_num;
+        let size = data.decoders_num as usize;
         if size != 0 {
             unsafe {
                 // let oof = std::slice::from_raw_parts::<*mut u8>(
                 //     u64::from_le_bytes(allocd[40..48].try_into().unwrap()) as *mut _,
                 //     size as usize,
                 // );
-                for i in &data.decoders {
+                for i in &data.decoders[0..size] {
                     let ptr = *i;
                     if !ptr.is_null() {
                         *ptr.add(32).cast::<u32>() = 1u32;
@@ -444,6 +448,63 @@ impl BinkA2 {
         }
     }
 
+    // Meat of the show
+    pub fn decode(
+        &self,
+        allocd: &mut [u8],
+        streaming_data: &[u8],
+        out_data: &mut [u16],
+    ) -> BinkA2Decode {
+        let data = unsafe { &*(allocd.as_mut_ptr() as *mut BinkA2ClassHeader) };
+        const BAD: BinkA2Decode = BinkA2Decode {
+            consumed: 4,
+            samples: 0,
+        };
+
+        if streaming_data.len() < 4
+            || u16::from_le_bytes([streaming_data[0], streaming_data[1]]) != 0x9999
+        {
+            return BAD;
+        }
+
+        let v12 = u16::from_le_bytes([streaming_data[2], streaming_data[3]]);
+        let (v12, consumed) = if v12 == 0xFFFF {
+            if streaming_data.len() < 8 {
+                return BAD;
+            }
+            (
+                u16::from_le_bytes([streaming_data[4], streaming_data[5]]),
+                8,
+            )
+        } else {
+            (v12, 4)
+        };
+
+        if v12 > data.max_block_size {
+            return BAD;
+        }
+
+        let v12 = v12 as usize;
+
+        if (v12 + consumed) > streaming_data.len() {
+            return BAD;
+        } else if (v12 + consumed) != streaming_data.len() {
+            let pos = v12 + consumed;
+            if (pos + 2) <= streaming_data.len()
+                && u16::from_le_bytes([streaming_data[pos], streaming_data[pos + 1]]) != 0x9999
+            {
+                return BAD;
+            }
+        };
+
+        if let Some(ret) = mss_decode(allocd, streaming_data, out_data) {
+            ret
+        } else {
+            // Bad
+            BAD
+        }
+    }
+
     pub fn get_block_size(&self, allocd: &mut [u8], streaming_data: &[u8]) -> BinkA2Block {
         if allocd.len() < 4 {
             return BinkA2Block {
@@ -484,182 +545,6 @@ impl BinkA2 {
             }
         }
     }
-}
-
-fn get_channel_num_decoders(channels: u16) -> Vec<u8> {
-    let half_channel = (channels + 1) / 2;
-    if half_channel > 0 {
-        (0..half_channel)
-            .map(|i| {
-                2 - if channels.wrapping_sub(i * 2) != 0 {
-                    1
-                } else {
-                    0
-                }
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    }
-}
-
-fn get_total_decoders_alloc_size(channels: u16, samplerate: u32) -> u32 {
-    let half_channel = (channels + 1) / 2;
-    let alloc_size_samples = if half_channel != 0 {
-        (0..half_channel)
-            .map(|i| {
-                // TODO: are names even correct?
-                let chan_id = i * 2;
-                let a2 = 2 - if channels.wrapping_sub(chan_id) != 0 {
-                    1
-                } else {
-                    0
-                };
-                get_decoder_size(samplerate, a2)
-            })
-            .reduce(|accum: u32, i| accum.wrapping_add(i))
-            .unwrap() // Should never panic?
-    } else {
-        0
-    };
-    alloc_size_samples
-}
-
-fn get_decoder_alloc_size_channel_num(channels: u16, samplerate: u32) -> (Vec<u32>, u32) {
-    let half_channel = (channels + 1) / 2;
-    let buf = (0..half_channel)
-        .map(|i| {
-            let chan_id = i * 2;
-            let a2 = 2 - if channels.wrapping_sub(chan_id) != 0 {
-                1
-            } else {
-                0
-            };
-            get_decoder_size(samplerate, a2)
-        })
-        .collect::<Vec<_>>();
-
-    if buf.is_empty() {
-        (vec![0], 0)
-    } else {
-        let mut accum = 0;
-        let mut ret = Vec::with_capacity(half_channel as usize);
-        for i in buf {
-            ret.push(i);
-            accum += i;
-        }
-        (ret, accum)
-    }
-}
-
-fn get_decoder_size(samplerate: u32, channels: u32) -> u32 {
-    if samplerate >= 44100 {
-        (channels.wrapping_mul(1 << 8) & 0xFFFFFFF).wrapping_add(160 + 15) & 0xFFFFFFF0
-    } else {
-        let mul = if samplerate >= 22050 { 1024 } else { 512 };
-        (channels.wrapping_mul(2).wrapping_mul(mul) >> 4).wrapping_add(160 + 15) & 0xFFFFFFF0
-    }
-}
-
-fn init_decoder(
-    decoder: &mut BinkA2DecoderInternal,
-    sample_rate: u32,
-    channels: u16,
-    flags: u32,
-) -> *mut BinkA2DecoderInternal {
-    debug_assert!(channels <= 2, "More than 2 channels for internal decoder!");
-
-    let ptr = decoder as *mut BinkA2DecoderInternal;
-    unsafe {
-        std::slice::from_raw_parts_mut(
-            ptr.cast::<u8>(),
-            std::mem::size_of::<BinkA2DecoderInternal>(),
-        )
-        .fill(0)
-    };
-
-    let (transform_size, transform_small, transform_big) = if sample_rate < 44100 {
-        if sample_rate < 22050 {
-            BINKA2_TRANSFORMS[2]
-        } else {
-            BINKA2_TRANSFORMS[1]
-        }
-    } else {
-        BINKA2_TRANSFORMS[0]
-    };
-    debug_assert!(
-        transform_small > transform_big,
-        "{} <= {}",
-        transform_small,
-        transform_big
-    );
-
-    let unk10 = 2 * channels as u32 * transform_size;
-
-    let flags = if (flags & BINKA2_FLAG_V2) != 0 {
-        flags | BINKA2_FLAG_IDK
-    } else {
-        flags
-    };
-
-    let (channels, transform_ratio, transform_size, sample_rate) = if (flags & BINKA2_FLAG_IDK) == 0
-    {
-        let transform_ratio = if channels == 2 {
-            transform_big
-        } else {
-            transform_small
-        };
-        (
-            1,
-            transform_ratio,
-            transform_size * channels as u32,
-            sample_rate * channels as u32,
-        )
-    } else {
-        (channels, transform_small, transform_size, sample_rate)
-    };
-
-    if transform_size > 2048 {
-        return std::ptr::null_mut();
-    }
-
-    let half_rate = (sample_rate + 1) / 2;
-    let bands_num = BINKA2_CRIT_FREQS
-        .iter()
-        .position(|freq| *freq >= half_rate)
-        .unwrap_or(BINKA2_CRIT_FREQS.len());
-
-    decoder.ptr = unsafe { ptr.add(1).cast() };
-    decoder.unk10 = unk10;
-    decoder.unk14 = unk10 >> 4;
-    decoder.size = (decoder.unk14 + 160 + 15) & 0xFFFFFFF0;
-    decoder.channels = channels as u32;
-    decoder.bands_num = bands_num as u32;
-    decoder.transform_size = transform_size;
-    decoder.transform_ratio = transform_ratio;
-    decoder.bits_shift = match decoder.unk14 {
-        512 => 8,
-        256 => 7,
-        128 => 6,
-        64 => 5,
-        _ => unreachable!("Invalid unk14 {}", decoder.unk14),
-    };
-
-    let transform_size_half = transform_size / 2;
-    for i in 0..bands_num {
-        let band = (BINKA2_CRIT_FREQS[i] * transform_size_half) / half_rate;
-        decoder.bands[i] = if band != 0 { band } else { 1 }
-    }
-    decoder.bands[bands_num] = transform_size_half;
-
-    decoder.start_frame = 1;
-    decoder.flags = if channels == 1 {
-        flags & (!BINKA2_FLAG_NOT_ONE_CHAN)
-    } else {
-        flags
-    };
-
-    ptr
 }
 
 #[cfg(test)]

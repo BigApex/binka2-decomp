@@ -46,6 +46,7 @@ pub struct BinkA2ClassHeader {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct BinkA2DecoderInternal {
     pub ptr: *mut c_void,
 

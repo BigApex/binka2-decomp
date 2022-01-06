@@ -353,6 +353,11 @@ fn main_new() {
                     (&mut cursor) as *mut _ as *mut c_void
                 )
             );
+            unsafe {
+                let header = &*allocd.as_ptr().cast::<BinkA2ClassHeader>();
+                let decoder = &*header.decoders[0].cast::<BinkA2DecoderInternal>();
+                eprintln!("Decoder: {:?}", decoder);
+            };
 
             let seek_shit = decoder.get_sample_byte_pos_c(&mut allocd, 0);
             println!("get_sample_byte_pos - {:?}", seek_shit);
@@ -405,6 +410,15 @@ fn main_new() {
                 alloc_2.fill(0);
                 let decode_ret = decoder.decode_c(&mut allocd, streaming_data, &mut alloc_2);
                 println!("decode - {:?}", decode_ret);
+                let alloc_2_clone = alloc_2.clone();
+                debug_assert_eq!(
+                    decode_ret,
+                    decoder.decode(&mut allocd, streaming_data, &mut alloc_2)
+                );
+                debug_assert_eq!(
+                    &alloc_2_clone[..decode_ret.samples as usize * metadata.channels as usize],
+                    &alloc_2[..decode_ret.samples as usize * metadata.channels as usize],
+                );
                 if decode_ret.samples != 0 {
                     // debug_assert_eq!((decode_ret.1 * metadata.channels as u32) as usize, alloc_2.len());
                     debug_assert_eq!(
@@ -421,11 +435,7 @@ fn main_new() {
                     }
                 }
                 if bruh.len() >= max_size {
-                    println!(
-                        "Not going overboard! {} >= {}",
-                        bruh.len(),
-                        max_size
-                    );
+                    println!("Not going overboard! {} >= {}", bruh.len(), max_size);
                     debug_assert_eq!(bruh.len(), max_size);
                     break;
                 }
