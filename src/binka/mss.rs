@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use bitbuffer::{BitReadBuffer, LittleEndian, BitReadStream};
+use bitbuffer::{BitReadBuffer, BitReadStream, LittleEndian};
 
 use super::*;
 
@@ -292,7 +292,7 @@ fn decode_frame(
             bits_shift,
         );
 
-        transform_size - unk14/2
+        transform_size - unk14 / 2
     } else {
         todo!("Stereo");
     };
@@ -304,7 +304,11 @@ fn decode_frame(
     }
 }
 
-fn read_channel_1(transform_size: u32, bands: &[u32], bitreader: &mut BitReadStream<LittleEndian>) -> Vec<f32> {
+fn read_channel_1(
+    transform_size: u32,
+    bands: &[u32],
+    bitreader: &mut BitReadStream<LittleEndian>,
+) -> Vec<f32> {
     let mut coeffs = vec![0f32; transform_size as usize];
     coeffs[0] = get_fixed_float(bitreader);
     coeffs[1] = get_fixed_float(bitreader);
@@ -325,7 +329,10 @@ fn read_channel_1(transform_size: u32, bands: &[u32], bitreader: &mut BitReadStr
             // 1 + 4 + 4 = 9
             // bitreader.skip(9).unwrap();
             let idx = bitreader.read_int::<u32>(4).unwrap();
-            (bitreader.read_int::<u32>(4).unwrap(), i + (BINKA2_RLE[idx as usize] * 8))
+            (
+                bitreader.read_int::<u32>(4).unwrap(),
+                i + (BINKA2_RLE[idx as usize] * 8),
+            )
         } else {
             // 1 + 4 = 5
             // bitreader.skip(5).unwrap();
@@ -350,7 +357,11 @@ fn read_channel_1(transform_size: u32, bands: &[u32], bitreader: &mut BitReadStr
             // if bitreader.remaining() as u32 <= (((end - i) * bits_plus_1) + 1) {
             if bitreader.bits_left() as u32 <= ((end - i) * bits_plus_1) {
                 eprintln!("{:#?}", &coeffs[..end as usize]);
-                panic!("what the fuck {} {}", bitreader.bits_left(), (((end - i) * bits_plus_1) + 9));
+                panic!(
+                    "what the fuck {} {}",
+                    bitreader.bits_left(),
+                    (((end - i) * bits_plus_1) + 9)
+                );
                 // coeffs[i as usize..end as usize].fill(0f32);
                 // i = end;
                 // break;
@@ -402,7 +413,7 @@ fn transform_1(
         panic!("Sizes don't match!")
     }
 
-    eprintln!("{:?}", coeffs);
+    // eprintln!("{:?}", coeffs);
 
     if output.len() < transform_size as usize {
         // not enough size for the window
@@ -443,7 +454,7 @@ fn transform_2(
     unk14: u32,
     bits_shift: u32,
 ) {
-    let mut transform = vec![0f32; transform_size as usize];
+    // let mut transform = vec![0f32; transform_size as usize];
 
     if (flags & BINKA2_FLAG_DCT) != 0 {
         // Inverse DCT aka DCT3
@@ -452,7 +463,7 @@ fn transform_2(
         idct(
             output,
             transform_ratio,
-            &mut transform,
+            // &mut transform,
             coeffs,
             transform_size,
         );
@@ -463,15 +474,14 @@ fn transform_2(
     // This is frame blending
     if bits_shift != 0 {
         let ptr_slice =
-            unsafe { std::slice::from_raw_parts_mut(ptr.cast::<u16>(), unk14 as usize) };
+            unsafe { std::slice::from_raw_parts_mut(ptr.cast::<i16>(), unk14 as usize / 2) };
         for i in 0..unk14 as usize / 2 {
-            output[i] = (((output[i] as u32)
-                .overflowing_sub(ptr_slice[i] as u32)
+            output[i] = ((((output[i] as i16 as i32)
+                .overflowing_sub(ptr_slice[i] as i16 as i32)
                 .0
-                .overflowing_mul(i as u32)
-                .0
-                >> bits_shift)
-                + ptr_slice[i] as u32) as u16;
+                .overflowing_mul(i as i32)
+                .0)
+                >> bits_shift).overflowing_add(ptr_slice[i] as i32).0) as i16 as u16;
         }
     }
 

@@ -408,17 +408,18 @@ fn main_new() {
                     break;
                 }
                 alloc_2.fill(0);
-                let decode_ret = decoder.decode_c(&mut allocd, streaming_data, &mut alloc_2);
+                // let alloc_2_clone = alloc_2.clone();
+                let decode_ret = decoder.decode(&mut allocd, streaming_data, &mut alloc_2);
                 println!("decode - {:?}", decode_ret);
-                let alloc_2_clone = alloc_2.clone();
-                debug_assert_eq!(
-                    decode_ret,
-                    decoder.decode(&mut allocd, streaming_data, &mut alloc_2)
-                );
-                debug_assert_eq!(
-                    &alloc_2_clone[..decode_ret.samples as usize * metadata.channels as usize],
-                    &alloc_2[..decode_ret.samples as usize * metadata.channels as usize],
-                );
+                // alloc_2[..].copy_from_slice(&alloc_2_clone);
+                // debug_assert_eq!(
+                //     decode_ret,
+                //     decoder.decode(&mut allocd, streaming_data, &mut alloc_2)
+                // );
+                // debug_assert_eq!(
+                //     &alloc_2_clone[..decode_ret.samples as usize * metadata.channels as usize],
+                //     &alloc_2[..decode_ret.samples as usize * metadata.channels as usize],
+                // );
                 if decode_ret.samples != 0 {
                     // debug_assert_eq!((decode_ret.1 * metadata.channels as u32) as usize, alloc_2.len());
                     debug_assert_eq!(
